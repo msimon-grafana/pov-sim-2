@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+require_env() {
+  local name="$1"
+  if [[ -z "${!name:-}" ]]; then
+    echo "Missing required environment variable: $name" >&2
+    exit 1
+  fi
+}
+
+require_command docker
+require_command minikube
+require_command kubectl
+require_command helm
+
+require_env GRAFANA_CLOUD_TOKEN
+
+OTLP_USERNAME="${OTLP_USERNAME:-1537131}"
+PYROSCOPE_USERNAME="${PYROSCOPE_USERNAME:-1537131}"
+PYROSCOPE_SERVER_ADDRESS="${PYROSCOPE_SERVER_ADDRESS:-https://profiles-prod-025.grafana.net}"
+FARO_URL="${FARO_URL:-https://faro-collector-prod-us-east-1.grafana.net/collect/3648756f5ae493ee16070dceb1856a44}"
+FARO_APP_NAME="${FARO_APP_NAME:-POV-SIM}"
+FARO_APP_VERSION="${FARO_APP_VERSION:-1.0.0}"
+FARO_ENVIRONMENT="${FARO_ENVIRONMENT:-minikube}"
+
+cd "${REPO_ROOT}"
+
+echo "Checking Docker availability..."
+docker info >/dev/null
+
+echo "Starting Minikube if needed..."
+if ! minikube status >/dev/null 2>&1; then
+  minikube start
+else
+  minikube start
+fi
+
+eval "$(minikube docker-env)"
+
+echo "Building application images into the Minikube Docker daemon..."
+docker build -t airlines:latest ./airlines
+docker build -t flights:latest ./flights
+docker build -t react-app:latest ./frontend
+
+echo "Installing Grafana Helm repo..."
+helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
+helm repo update
+
+echo "Installing Grafana Kubernetes monitoring..."
+helm upgrade --install grafana-k8s-monitoring grafana/k8s-monitoring \
+  --namespace default \
+  --create-namespace \
+  --values - <<EOF
+cluster:
+  name: POV-SIM
+
+destinations:
+  gc-otlp-endpoint:
+    type: otlp
+    url: https://otlp-gateway-prod-us-east-1.grafana.net/otlp
+    protocol: http
+    auth:
+      type: basic
+      username: "${OTLP_USERNAME}"
+      password: "${GRAFANA_CLOUD_TOKEN}"
+    metrics:
+      enabled: true
+    logs:
+      enabled: true
+    traces:
+      enabled: true
+
+  grafana-cloud-profiles:
+    type: pyroscope
+    url: ${PYROSCOPE_SERVER_ADDRESS}:443
+    auth:
+      type: basic
+      username: "${PYROSCOPE_USERNAME}"
+      password: "${GRAFANA_CLOUD_TOKEN}"
+
+telemetryServices:
+  kube-state-metrics:
+    deploy: true
+
+applicationObservability:
+  enabled: true
+  collector: alloy-receiver
+  receivers:
+    otlp:
+      grpc:
+        enabled: true
+        port: 4317
+      http:
+        enabled: true
+        port: 4318
+  destinations:
+    - gc-otlp-endpoint
+
+profiling:
+  enabled: true
+  collector: alloy-profiles
+  destinations:
+    - grafana-cloud-profiles
+
+podLogs:
+  enabled: true
+  collector: alloy-singleton
+  destinations:
+    - gc-otlp-endpoint
+
+clusterEvents:
+  enabled: true
+  collector: alloy-singleton
+  destinations:
+    - gc-otlp-endpoint
+
+clusterMetrics:
+  enabled: true
+  collector: alloy-metrics
+  destinations:
+    - gc-otlp-endpoint
+  opencost:
+    enabled: false
+  kepler:
+    enabled: false
+
+collectors:
+  alloy-receiver:
+    enabled: true
+  alloy-singleton:
+    enabled: true
+  alloy-metrics:
+    enabled: true
+  alloy-profiles:
+    enabled: true
+
+autoInstrumentation:
+  enabled: false
+EOF
+
+echo "Installing the PoV simulator chart..."
+helm upgrade --install pov-sim ./helm-charts/pov-sim \
+  --namespace default \
+  --set alloy.enabled=false \
+  --set observability.otlp.endpoint=http://grafana-k8s-monitoring-alloy-receiver.default.svc.cluster.local:4317 \
+  --set observability.otlp.protocol=grpc \
+  --set secrets.pyroscopeServerAddress="${PYROSCOPE_SERVER_ADDRESS}" \
+  --set secrets.pyroscopeBasicAuthUser="${PYROSCOPE_USERNAME}" \
+  --set secrets.pyroscopeBasicAuthPassword="${GRAFANA_CLOUD_TOKEN}" \
+  --set airlines.pyroscopeApplicationName=airlines-direct-to-cloud \
+  --set flights.pyroscopeApplicationName=flights-direct-to-cloud \
+  --set frontend.env.faroUrl="${FARO_URL}" \
+  --set frontend.env.faroAppName="${FARO_APP_NAME}" \
+  --set frontend.env.faroAppVersion="${FARO_APP_VERSION}" \
+  --set frontend.env.faroEnvironment="${FARO_ENVIRONMENT}"
+
+echo
+echo "Startup complete."
+echo "Next:"
+echo "  kubectl get pods -n default"
+echo "  kubectl port-forward svc/pov-sim-frontend 3000:3000 -n default"
