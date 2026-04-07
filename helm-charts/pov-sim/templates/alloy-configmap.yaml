@@ -1,0 +1,11 @@
+{{- if .Values.alloy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pov-sim.componentFullname" (dict "root" . "component" "alloy-config") }}
+  labels:
+    {{- include "pov-sim.labels" . | nindent 4 }}
+data:
+  config.alloy: |
+{{ .Files.Get "files/config.alloy" | indent 4 }}
+{{- end }}

@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pov-sim.componentFullname" (dict "root" . "component" "flights") }}
+  labels:
+    {{- include "pov-sim.labels" . | nindent 4 }}
+    {{- include "pov-sim.selectorLabels" (dict "root" . "component" "flights") | nindent 4 }}
+spec:
+  replicas: {{ .Values.flights.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pov-sim.selectorLabels" (dict "root" . "component" "flights") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pov-sim.selectorLabels" (dict "root" . "component" "flights") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: flights
+          image: "{{ .Values.flights.image.repository }}:{{ .Values.flights.image.tag }}"
+          imagePullPolicy: {{ .Values.flights.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.flights.service.port }}
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: flights-via-alloy
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ include "pov-sim.otlpEndpoint" . | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.observability.otlp.protocol | quote }}
+            - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+              value: "true"
+            - name: PYROSCOPE_APPLICATION_NAME
+              value: {{ .Values.flights.pyroscopeApplicationName | quote }}
+            - name: PYROSCOPE_SERVER_ADDRESS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pov-sim.secretName" . }}
+                  key: PYROSCOPE_SERVER_ADDRESS
+            - name: PYROSCOPE_BASIC_AUTH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pov-sim.secretName" . }}
+                  key: PYROSCOPE_BASIC_AUTH_USER
+            - name: PYROSCOPE_BASIC_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pov-sim.secretName" . }}
+                  key: PYROSCOPE_BASIC_AUTH_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+          resources:
+            {{- toYaml .Values.flights.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pov-sim.componentFullname" (dict "root" . "component" "flights") }}
+  labels:
+    {{- include "pov-sim.labels" . | nindent 4 }}
+    {{- include "pov-sim.selectorLabels" (dict "root" . "component" "flights") | nindent 4 }}
+spec:
+  type: {{ .Values.flights.service.type }}
+  selector:
+    {{- include "pov-sim.selectorLabels" (dict "root" . "component" "flights") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.flights.service.port }}
+      targetPort: http

@@ -1,0 +1,95 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+observability:
+  otlp:
+    endpoint: ""
+    protocol: grpc
+
+secrets:
+  cloudOtlpEndpoint: ""
+  cloudOtlpUsername: ""
+  cloudOtlpPassword: ""
+  pyroscopeServerAddress: ""
+  pyroscopeBasicAuthUser: ""
+  pyroscopeBasicAuthPassword: ""
+
+airlines:
+  replicaCount: 1
+  image:
+    repository: airlines
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  pyroscopeApplicationName: airlines-via-k8s
+  resources: {}
+
+flights:
+  replicaCount: 1
+  image:
+    repository: flights
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5001
+  pyroscopeApplicationName: flights-via-k8s
+  resources: {}
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: react-app
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  env:
+    airlinesApiUrl: /airlines
+    flightsApiUrl: /flights
+    faroUrl: ""
+    faroAppName: POV-SIM
+    faroAppVersion: 1.0.0
+    faroEnvironment: kubernetes
+  proxyTargets:
+    airlines: ""
+    flights: ""
+  resources: {}
+
+alloy:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: grafana/alloy
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    grpcPort: 4317
+    httpPort: 4318
+    uiPort: 12345
+    metricsPort: 9090
+  resources: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: pov-sim.local
+      paths:
+        - path: /airlines
+          pathType: Prefix
+          service: airlines
+        - path: /flights
+          pathType: Prefix
+          service: flights
+        - path: /
+          pathType: Prefix
+          service: frontend
+  tls: []

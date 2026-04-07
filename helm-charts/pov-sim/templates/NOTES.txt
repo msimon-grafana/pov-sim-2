@@ -1,0 +1,10 @@
+1. Build or publish the images referenced in values.yaml before installing this chart.
+
+2. Install or upgrade the release:
+   helm upgrade --install {{ .Release.Name }} {{ .Chart.Name }}
+
+3. For local access without ingress, port-forward the frontend service:
+   kubectl port-forward svc/{{ include "pov-sim.componentFullname" (dict "root" . "component" "frontend") }} 3000:{{ .Values.frontend.service.port }}
+
+4. Open the application at:
+   http://127.0.0.1:3000

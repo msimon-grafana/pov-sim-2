@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pov-sim.componentFullname" (dict "root" . "component" "frontend") }}
+  labels:
+    {{- include "pov-sim.labels" . | nindent 4 }}
+    {{- include "pov-sim.selectorLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pov-sim.selectorLabels" (dict "root" . "component" "frontend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pov-sim.selectorLabels" (dict "root" . "component" "frontend") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.port }}
+          env:
+            - name: REACT_APP_AIRLINES_API_URL
+              value: {{ .Values.frontend.env.airlinesApiUrl | quote }}
+            - name: REACT_APP_FLIGHTS_API_URL
+              value: {{ .Values.frontend.env.flightsApiUrl | quote }}
+            - name: REACT_APP_FARO_URL
+              value: {{ .Values.frontend.env.faroUrl | quote }}
+            - name: REACT_APP_FARO_APP_NAME
+              value: {{ .Values.frontend.env.faroAppName | quote }}
+            - name: REACT_APP_FARO_APP_VERSION
+              value: {{ .Values.frontend.env.faroAppVersion | quote }}
+            - name: REACT_APP_FARO_ENVIRONMENT
+              value: {{ .Values.frontend.env.faroEnvironment | quote }}
+            - name: AIRLINES_PROXY_TARGET
+              value: {{ default (printf "http://%s:%v" (include "pov-sim.componentFullname" (dict "root" . "component" "airlines")) .Values.airlines.service.port) .Values.frontend.proxyTargets.airlines | quote }}
+            - name: FLIGHTS_PROXY_TARGET
+              value: {{ default (printf "http://%s:%v" (include "pov-sim.componentFullname" (dict "root" . "component" "flights")) .Values.flights.service.port) .Values.frontend.proxyTargets.flights | quote }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pov-sim.componentFullname" (dict "root" . "component" "frontend") }}
+  labels:
+    {{- include "pov-sim.labels" . | nindent 4 }}
+    {{- include "pov-sim.selectorLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  selector:
+    {{- include "pov-sim.selectorLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http

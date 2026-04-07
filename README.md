@@ -232,3 +232,73 @@ Confirm the pod is up and running
 ```
 kubectl get pods
 ```
+
+## Deploying the full PoV simulator with Helm
+
+The sample chart above is only a starter. For the full stack in this repo, use the chart in [`helm-charts/pov-sim`](/Users/msimon/Documents/Playground/pov-sim-2/helm-charts/pov-sim).
+
+Build the application images into your local cluster runtime first. For Minikube, one option is:
+```
+eval $(minikube docker-env)
+docker build -t airlines:latest ./airlines
+docker build -t flights:latest ./flights
+docker build -t react-app:latest ./frontend
+```
+
+Install the chart:
+```
+helm upgrade --install pov-sim ./helm-charts/pov-sim \
+  --set secrets.cloudOtlpEndpoint="https://YOUR_OTLP_ENDPOINT.grafana.net/otlp" \
+  --set secrets.cloudOtlpUsername="YOUR_OTLP_USERNAME" \
+  --set secrets.cloudOtlpPassword="YOUR_OTLP_TOKEN"
+```
+
+If you also want Pyroscope credentials configured, add:
+```
+  --set secrets.pyroscopeServerAddress="https://YOUR-PYROSCOPE-ENDPOINT.grafana.net" \
+  --set secrets.pyroscopeBasicAuthUser="YOUR_PYROSCOPE_USER" \
+  --set secrets.pyroscopeBasicAuthPassword="YOUR_PYROSCOPE_PASSWORD"
+```
+
+Access the app locally:
+```
+kubectl port-forward svc/pov-sim-frontend 3000:3000
+```
+
+Then open:
+```
+http://127.0.0.1:3000
+```
+
+The frontend defaults to `/airlines` and `/flights` and proxies those requests to the in-cluster backend services, so you do not need separate port-forwards for the APIs.
+
+### Java profiling in Kubernetes
+
+The `airlines` image now downloads a pinned Pyroscope Java agent during image build and starts the JVM with both the OpenTelemetry Java agent and the Pyroscope Java agent. The image also includes the recommended JVM flags for async-profiler stack accuracy.
+
+As of April 7, 2026, Grafana's Java profiling docs still show `io.pyroscope:agent:2.1.2`, while Maven Central lists newer releases. This repo pins `2.5.1` from Maven Central in [`airlines/Dockerfile`](/Users/msimon/Documents/Playground/pov-sim-2/airlines/Dockerfile) to keep builds reproducible instead of relying on a moving `latest` URL. Sources: [Grafana Java profiling docs](https://grafana.com/docs/pyroscope/latest/configure-client/language-sdks/java/), [Maven Central](https://central.sonatype.com/artifact/io.pyroscope/agent).
+
+### Using Grafana k8s-monitoring instead of the bundled Alloy receiver
+
+If you install Grafana's `k8s-monitoring` Helm chart from the Cloud UI, you can point the app pods at that receiver and disable the bundled `alloy` in this chart.
+
+The chart now supports an OTLP endpoint override:
+```
+helm upgrade --install pov-sim ./helm-charts/pov-sim \
+  --set alloy.enabled=false \
+  --set observability.otlp.endpoint="http://YOUR-OTLP-RECEIVER-SERVICE:4317" \
+  --set observability.otlp.protocol=grpc \
+  --set secrets.pyroscopeServerAddress="https://YOUR-PYROSCOPE-ENDPOINT.grafana.net" \
+  --set secrets.pyroscopeBasicAuthUser="YOUR_PYROSCOPE_USER" \
+  --set secrets.pyroscopeBasicAuthPassword="YOUR_PYROSCOPE_PASSWORD"
+```
+
+That maps well to the Grafana Cloud `k8s-monitoring` install command you shared, especially these features:
+- `applicationObservability.receivers.otlp` gives you an in-cluster OTLP receiver for app telemetry.
+- `profiling.enabled` and `alloy-profiles.enabled` align with sending profiles into Grafana Cloud Profiles.
+- `podLogs.enabled`, `clusterMetrics.enabled`, and `clusterEvents.enabled` cover Kubernetes-level telemetry that this app chart does not try to manage.
+
+The exact receiver service name can vary by release, so after installing `grafana/k8s-monitoring`, check it with:
+```
+kubectl get svc
+```
