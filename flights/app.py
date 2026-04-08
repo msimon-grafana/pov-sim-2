@@ -83,7 +83,7 @@ def get_flights(airline):
         # trace span
         flight_span.set_attribute("airline", airline)
         # metric
-        flight_check_counter.add(1, {"airline": 1})
+        flight_check_counter.add(1, {"airline": airline})
         # log
         logmsg = "flights checked for airline: " + airline
         logger.info(logmsg)

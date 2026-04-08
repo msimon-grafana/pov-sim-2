@@ -61,8 +61,9 @@ public class AirlinesController {
 
 		// trace/span
 		Span span = Span.current();
-		span.setAttribute("testAttribute1", "test123");
-		span.setAttribute("testAttribute2", "test456");
+		span.setAttribute("airlines.raise_requested", raise);
+		span.setAttribute("airlines.available_codes", String.join(",", airlines));
+		span.setAttribute("airlines.available_count", airlines.length);
 
 		// metric
 		requestsCounter.add(1);

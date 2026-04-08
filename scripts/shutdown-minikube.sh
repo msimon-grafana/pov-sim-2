@@ -24,12 +24,6 @@ helm uninstall pov-sim -n default >/dev/null 2>&1 || true
 echo "Uninstalling Grafana Kubernetes monitoring..."
 helm uninstall grafana-k8s-monitoring -n default --no-hooks >/dev/null 2>&1 || true
 
-echo "Uninstalling any leftover Grafana Alloy sub-releases..."
-helm uninstall grafana-k8s-monitoring-alloy-metrics -n default >/dev/null 2>&1 || true
-helm uninstall grafana-k8s-monitoring-alloy-profiles -n default >/dev/null 2>&1 || true
-helm uninstall grafana-k8s-monitoring-alloy-receiver -n default >/dev/null 2>&1 || true
-helm uninstall grafana-k8s-monitoring-alloy-singleton -n default >/dev/null 2>&1 || true
-
 echo "Cleaning up any leftover Grafana monitoring resources..."
 kubectl delete job grafana-k8s-monitoring-remove-alloy-and-finalizer -n default --ignore-not-found >/dev/null 2>&1 || true
 kubectl delete alloy --all -n default --ignore-not-found >/dev/null 2>&1 || true
