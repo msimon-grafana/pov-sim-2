@@ -43,14 +43,24 @@ spec:
               value: {{ default (printf "http://%s:%v" (include "pov-sim.componentFullname" (dict "root" . "component" "airlines")) .Values.airlines.service.port) .Values.frontend.proxyTargets.airlines | quote }}
             - name: FLIGHTS_PROXY_TARGET
               value: {{ default (printf "http://%s:%v" (include "pov-sim.componentFullname" (dict "root" . "component" "flights")) .Values.flights.service.port) .Values.frontend.proxyTargets.flights | quote }}
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
           readinessProbe:
             httpGet:
               path: /
               port: http
+            periodSeconds: 10
+            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /
               port: http
+            periodSeconds: 10
+            failureThreshold: 6
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
 ---

@@ -50,14 +50,24 @@ spec:
                 secretKeyRef:
                   name: {{ include "pov-sim.secretName" . }}
                   key: PYROSCOPE_BASIC_AUTH_PASSWORD
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
           readinessProbe:
             httpGet:
               path: /health
               port: http
+            periodSeconds: 10
+            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /health
               port: http
+            periodSeconds: 10
+            failureThreshold: 6
           resources:
             {{- toYaml .Values.airlines.resources | nindent 12 }}
 ---

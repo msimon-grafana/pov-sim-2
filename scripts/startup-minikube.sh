@@ -12,10 +12,46 @@ require_command() {
   fi
 }
 
-require_env() {
-  local name="$1"
-  if [[ -z "${!name:-}" ]]; then
-    echo "Missing required environment variable: $name" >&2
+print_missing_env_help() {
+  cat >&2 <<'EOF'
+Missing one or more required environment variables.
+
+Before running this script, export the required tokens in your shell:
+
+  export GRAFANA_CLOUD_TOKEN='your-grafana-cloud-token'
+  export SYNTHETIC_MONITORING_API_TOKEN='your-synthetic-monitoring-api-token'
+
+Optional overrides:
+
+  export OTLP_USERNAME='1537131'
+  export PYROSCOPE_USERNAME='1537131'
+  export PYROSCOPE_SERVER_ADDRESS='https://profiles-prod-025.grafana.net'
+  export FARO_URL='https://faro-collector-prod-us-east-1.grafana.net/collect/...'
+  export FARO_APP_NAME='POV-SIM'
+  export FARO_APP_VERSION='1.0.0'
+  export FARO_ENVIRONMENT='minikube'
+  export SYNTHETIC_MONITORING_API_SERVER='synthetic-monitoring-grpc-us-east-1.grafana.net:443'
+  export SYNTHETIC_MONITORING_IMAGE_REPOSITORY='grafana/synthetic-monitoring-agent'
+  export SYNTHETIC_MONITORING_IMAGE_TAG='v0.55.0-browser'
+
+Then rerun:
+
+  ./scripts/startup-minikube.sh
+EOF
+}
+
+require_envs() {
+  local missing=0
+  for name in "$@"; do
+    if [[ -z "${!name:-}" ]]; then
+      echo "Missing required environment variable: $name" >&2
+      missing=1
+    fi
+  done
+
+  if [[ "${missing}" -eq 1 ]]; then
+    echo >&2
+    print_missing_env_help
     exit 1
   fi
 }
@@ -25,7 +61,7 @@ require_command minikube
 require_command kubectl
 require_command helm
 
-require_env GRAFANA_CLOUD_TOKEN
+require_envs GRAFANA_CLOUD_TOKEN SYNTHETIC_MONITORING_API_TOKEN
 
 OTLP_USERNAME="${OTLP_USERNAME:-1537131}"
 PYROSCOPE_USERNAME="${PYROSCOPE_USERNAME:-1537131}"
@@ -34,6 +70,9 @@ FARO_URL="${FARO_URL:-https://faro-collector-prod-us-east-1.grafana.net/collect/
 FARO_APP_NAME="${FARO_APP_NAME:-POV-SIM}"
 FARO_APP_VERSION="${FARO_APP_VERSION:-1.0.0}"
 FARO_ENVIRONMENT="${FARO_ENVIRONMENT:-minikube}"
+SYNTHETIC_MONITORING_API_SERVER="${SYNTHETIC_MONITORING_API_SERVER:-synthetic-monitoring-grpc-us-east-1.grafana.net:443}"
+SYNTHETIC_MONITORING_IMAGE_REPOSITORY="${SYNTHETIC_MONITORING_IMAGE_REPOSITORY:-grafana/synthetic-monitoring-agent}"
+SYNTHETIC_MONITORING_IMAGE_TAG="${SYNTHETIC_MONITORING_IMAGE_TAG:-v0.55.0-browser}"
 
 cd "${REPO_ROOT}"
 
@@ -164,7 +203,12 @@ helm upgrade --install pov-sim ./helm-charts/pov-sim \
   --set frontend.env.faroUrl="${FARO_URL}" \
   --set frontend.env.faroAppName="${FARO_APP_NAME}" \
   --set frontend.env.faroAppVersion="${FARO_APP_VERSION}" \
-  --set frontend.env.faroEnvironment="${FARO_ENVIRONMENT}"
+  --set frontend.env.faroEnvironment="${FARO_ENVIRONMENT}" \
+  --set syntheticMonitoring.enabled=true \
+  --set syntheticMonitoring.apiServerAddress="${SYNTHETIC_MONITORING_API_SERVER}" \
+  --set syntheticMonitoring.image.repository="${SYNTHETIC_MONITORING_IMAGE_REPOSITORY}" \
+  --set syntheticMonitoring.image.tag="${SYNTHETIC_MONITORING_IMAGE_TAG}" \
+  --set secrets.syntheticMonitoringApiToken="${SYNTHETIC_MONITORING_API_TOKEN}"
 
 echo
 echo "Startup complete."

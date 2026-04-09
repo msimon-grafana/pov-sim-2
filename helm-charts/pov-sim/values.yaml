@@ -15,6 +15,7 @@ secrets:
   pyroscopeServerAddress: ""
   pyroscopeBasicAuthUser: ""
   pyroscopeBasicAuthPassword: ""
+  syntheticMonitoringApiToken: ""
 
 airlines:
   replicaCount: 1
@@ -74,6 +75,21 @@ alloy:
     httpPort: 4318
     uiPort: 12345
     metricsPort: 9090
+  resources: {}
+
+syntheticMonitoring:
+  enabled: false
+  image:
+    repository: grafana/synthetic-monitoring-agent
+    tag: v0.55.0-browser
+    pullPolicy: IfNotPresent
+  apiServerAddress: ""
+  verbose: true
+  listenAddress: 0.0.0.0:4050
+  browserExecutablePath: /usr/bin/chromium
+  service:
+    type: ClusterIP
+    port: 4050
   resources: {}
 
 ingress:

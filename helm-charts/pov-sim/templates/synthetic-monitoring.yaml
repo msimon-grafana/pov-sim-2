@@ -1,0 +1,70 @@
+{{- if .Values.syntheticMonitoring.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pov-sim.componentFullname" (dict "root" . "component" "synthetic-monitoring-agent") }}
+  labels:
+    {{- include "pov-sim.labels" . | nindent 4 }}
+    {{- include "pov-sim.selectorLabels" (dict "root" . "component" "synthetic-monitoring-agent") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "pov-sim.selectorLabels" (dict "root" . "component" "synthetic-monitoring-agent") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pov-sim.selectorLabels" (dict "root" . "component" "synthetic-monitoring-agent") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: synthetic-monitoring-agent
+          image: "{{ .Values.syntheticMonitoring.image.repository }}:{{ .Values.syntheticMonitoring.image.tag }}"
+          imagePullPolicy: {{ .Values.syntheticMonitoring.image.pullPolicy }}
+          args:
+            - --api-server-address={{ .Values.syntheticMonitoring.apiServerAddress }}
+            - --listen-address={{ .Values.syntheticMonitoring.listenAddress }}
+            - --verbose={{ ternary "true" "false" .Values.syntheticMonitoring.verbose }}
+          env:
+            - name: SM_AGENT_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pov-sim.secretName" . }}
+                  key: SM_AGENT_API_TOKEN
+            - name: K6_BROWSER_EXECUTABLE_PATH
+              value: {{ .Values.syntheticMonitoring.browserExecutablePath | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.syntheticMonitoring.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.syntheticMonitoring.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pov-sim.componentFullname" (dict "root" . "component" "synthetic-monitoring-agent") }}
+  labels:
+    {{- include "pov-sim.labels" . | nindent 4 }}
+    {{- include "pov-sim.selectorLabels" (dict "root" . "component" "synthetic-monitoring-agent") | nindent 4 }}
+spec:
+  type: {{ .Values.syntheticMonitoring.service.type }}
+  selector:
+    {{- include "pov-sim.selectorLabels" (dict "root" . "component" "synthetic-monitoring-agent") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.syntheticMonitoring.service.port }}
+      targetPort: http
+{{- end }}
