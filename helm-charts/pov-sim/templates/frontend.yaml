@@ -47,18 +47,21 @@ spec:
             httpGet:
               path: /
               port: http
+            timeoutSeconds: 3
             periodSeconds: 5
-            failureThreshold: 24
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /
               port: http
+            timeoutSeconds: 3
             periodSeconds: 10
             failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /
               port: http
+            timeoutSeconds: 3
             periodSeconds: 10
             failureThreshold: 6
           resources:

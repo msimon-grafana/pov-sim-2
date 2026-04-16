@@ -56,52 +56,11 @@ require_envs() {
   fi
 }
 
-require_command docker
-require_command minikube
-require_command kubectl
-require_command helm
-
-require_envs GRAFANA_CLOUD_TOKEN SYNTHETIC_MONITORING_API_TOKEN
-
-OTLP_USERNAME="${OTLP_USERNAME:-1537131}"
-PYROSCOPE_USERNAME="${PYROSCOPE_USERNAME:-1537131}"
-PYROSCOPE_SERVER_ADDRESS="${PYROSCOPE_SERVER_ADDRESS:-https://profiles-prod-025.grafana.net}"
-FARO_URL="${FARO_URL:-https://faro-collector-prod-us-east-1.grafana.net/collect/3648756f5ae493ee16070dceb1856a44}"
-FARO_APP_NAME="${FARO_APP_NAME:-POV-SIM}"
-FARO_APP_VERSION="${FARO_APP_VERSION:-1.0.0}"
-FARO_ENVIRONMENT="${FARO_ENVIRONMENT:-minikube}"
-SYNTHETIC_MONITORING_API_SERVER="${SYNTHETIC_MONITORING_API_SERVER:-synthetic-monitoring-grpc-us-east-1.grafana.net:443}"
-SYNTHETIC_MONITORING_IMAGE_REPOSITORY="${SYNTHETIC_MONITORING_IMAGE_REPOSITORY:-grafana/synthetic-monitoring-agent}"
-SYNTHETIC_MONITORING_IMAGE_TAG="${SYNTHETIC_MONITORING_IMAGE_TAG:-v0.55.0-browser}"
-
-cd "${REPO_ROOT}"
-
-echo "Checking Docker availability..."
-docker info >/dev/null
-
-echo "Starting Minikube if needed..."
-if ! minikube status >/dev/null 2>&1; then
-  minikube start
-else
-  minikube start
-fi
-
-eval "$(minikube docker-env)"
-
-echo "Building application images into the Minikube Docker daemon..."
-docker build -t airlines:latest ./airlines
-docker build -t flights:latest ./flights
-docker build -t react-app:latest ./frontend
-
-echo "Installing Grafana Helm repo..."
-helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
-helm repo update
-
-echo "Installing Grafana Kubernetes monitoring..."
-helm upgrade --install grafana-k8s-monitoring grafana/k8s-monitoring \
-  --namespace default \
-  --create-namespace \
-  --values - <<EOF
+install_grafana_monitoring() {
+  helm upgrade --install grafana-k8s-monitoring grafana/k8s-monitoring \
+    --namespace default \
+    --create-namespace \
+    --values - <<EOF
 cluster:
   name: POV-SIM
 
@@ -188,6 +147,94 @@ collectors:
 autoInstrumentation:
   enabled: false
 EOF
+}
+
+wait_for_alloy_receiver() {
+  local attempts=24
+  local sleep_seconds=5
+
+  echo "Verifying Alloy collectors and OTLP receiver..."
+  for ((i = 1; i <= attempts; i++)); do
+    if kubectl get alloy -n default >/dev/null 2>&1 &&
+       kubectl get alloy -n default 2>/dev/null | grep -q "grafana-k8s-monitoring-alloy-receiver" &&
+       kubectl get pods -n default 2>/dev/null | grep -q "grafana-k8s-monitoring-alloy-receiver" &&
+       kubectl get pods -n default 2>/dev/null | grep "grafana-k8s-monitoring-alloy-receiver" | grep -q "2/2[[:space:]]\+Running"; then
+      echo "Alloy receiver is up and ready."
+      return 0
+    fi
+
+    sleep "${sleep_seconds}"
+  done
+
+  return 1
+}
+
+repair_grafana_monitoring_if_needed() {
+  if wait_for_alloy_receiver; then
+    return 0
+  fi
+
+  echo "Grafana monitoring deployed but Alloy receiver did not come up. Repairing release..."
+  helm upgrade --install grafana-k8s-monitoring grafana/k8s-monitoring \
+    -n default \
+    --reuse-values
+
+  if wait_for_alloy_receiver; then
+    return 0
+  fi
+
+  echo "Failed to bring up the Alloy receiver automatically." >&2
+  echo "Check the following for details:" >&2
+  echo "  kubectl get alloy -n default" >&2
+  echo "  kubectl get pods -n default" >&2
+  echo "  kubectl logs deploy/grafana-k8s-monitoring-alloy-operator -n default" >&2
+  exit 1
+}
+
+require_command docker
+require_command minikube
+require_command kubectl
+require_command helm
+
+require_envs GRAFANA_CLOUD_TOKEN SYNTHETIC_MONITORING_API_TOKEN
+
+OTLP_USERNAME="${OTLP_USERNAME:-1537131}"
+PYROSCOPE_USERNAME="${PYROSCOPE_USERNAME:-1537131}"
+PYROSCOPE_SERVER_ADDRESS="${PYROSCOPE_SERVER_ADDRESS:-https://profiles-prod-025.grafana.net}"
+FARO_URL="${FARO_URL:-https://faro-collector-prod-us-east-1.grafana.net/collect/3648756f5ae493ee16070dceb1856a44}"
+FARO_APP_NAME="${FARO_APP_NAME:-POV-SIM}"
+FARO_APP_VERSION="${FARO_APP_VERSION:-1.0.0}"
+FARO_ENVIRONMENT="${FARO_ENVIRONMENT:-minikube}"
+SYNTHETIC_MONITORING_API_SERVER="${SYNTHETIC_MONITORING_API_SERVER:-synthetic-monitoring-grpc-us-east-1.grafana.net:443}"
+SYNTHETIC_MONITORING_IMAGE_REPOSITORY="${SYNTHETIC_MONITORING_IMAGE_REPOSITORY:-grafana/synthetic-monitoring-agent}"
+SYNTHETIC_MONITORING_IMAGE_TAG="${SYNTHETIC_MONITORING_IMAGE_TAG:-v0.55.0-browser}"
+
+cd "${REPO_ROOT}"
+
+echo "Checking Docker availability..."
+docker info >/dev/null
+
+echo "Starting Minikube if needed..."
+if ! minikube status >/dev/null 2>&1; then
+  minikube start
+else
+  minikube start
+fi
+
+eval "$(minikube docker-env)"
+
+echo "Building application images into the Minikube Docker daemon..."
+docker build -t airlines:latest ./airlines
+docker build -t flights:latest ./flights
+docker build -t react-app:latest ./frontend
+
+echo "Installing Grafana Helm repo..."
+helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
+helm repo update
+
+echo "Installing Grafana Kubernetes monitoring..."
+install_grafana_monitoring
+repair_grafana_monitoring_if_needed
 
 echo "Installing the PoV simulator chart..."
 helm upgrade --install pov-sim ./helm-charts/pov-sim \
